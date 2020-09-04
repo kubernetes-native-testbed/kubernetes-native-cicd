@@ -1,0 +1,54 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: microservice-b
+  namespace: microservice-b
+  labels:
+    app.kubernetes.io/instance: microservice-b
+    app.kubernetes.io/part-of: microservice-b
+    app.kubernetes.io/name: nginx
+    app.kubernetes.io/component: app
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      service: microservice-b
+      role: app
+  template:
+    metadata:
+      labels:
+        service: microservice-b
+        role: app
+    spec:
+      containers:
+        - name: microservice-b
+          image: registry-harbor-core.harbor.svc.cluster.local/library/microservice-b:latest-cache
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+          ports:
+            - containerPort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: microservice-b
+  namespace: microservice-b
+  labels:
+    app.kubernetes.io/instance: microservice-b
+    app.kubernetes.io/part-of: microservice-b
+    app.kubernetes.io/name: nginx
+    app.kubernetes.io/component: app
+spec:
+  type: ClusterIP
+  ports:
+    - name: "http-port"
+      protocol: "TCP"
+      port: 80
+      targetPort: 80
+  selector:
+    service: microservice-b
+    role: app
+
