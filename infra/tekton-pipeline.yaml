@@ -18,6 +18,7 @@ metadata:
   namespace: tekton-pipelines
 secrets:
 - name: harbor-credentials
+- name: gh-credentials
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
@@ -318,22 +319,46 @@ metadata:
   name: check-deprication-pluto
   namespace: tekton-pipelines
 spec:
+  params:
+  - name: PIPELINERUN_NAME
+  - name: TEKTON_URL
   resources:
     inputs:
     - name: source-repo
       type: git
+    - name: pr
+      type: pullRequest
+    outputs:
+    - name: pr
+      type: pullRequest
   steps:
   - name: check-deprication
     workingdir: /workspace/source-repo
     image: renaultdigital/pluto:v3.4.1
     command:
-    - pluto
-    - detect-files
-    - -d
-    - /workspace/source-repo/manifests
-    # TODO: auto detect kubernetes version
-    # - -v
-    # - v1.16.13
+    - sh
+    - -c
+    - |
+      pluto detect-files -d /workspace/source-repo/manifests
+      # TODO: auto detect kubernetes version
+      # -v v1.16.13
+
+      if [ $? -eq 0 ]; then
+        STATUS=success
+      else
+        STATUS=failure
+      fi
+
+      cp -r /workspace/pr/* /workspace/output/pr/;
+      cat << _EOF_ > /workspace/output/pr/status/check-deprication-pluto.json
+      {
+        "Label": "check-deprication-pluto",
+        "State": "$STATUS",
+        "Desc": "check deplicated manifests by pluto",
+        "Target": "https://$(params.TEKTON_URL)/#/namespaces/tekton-pipelines/pipelineruns/$(params.PIPELINERUN_NAME)?pipelineTask=check-deprication-pluto&step=check-deprication"
+      }
+      _EOF_
+      if [ "$STATUS" != "success" ]; then exit 1; fi
     resources:
       limits:
         cpu: 100m
@@ -350,21 +375,46 @@ metadata:
   name: check-syntax-kubeval
   namespace: tekton-pipelines
 spec:
+  params:
+  - name: PIPELINERUN_NAME
+  - name: TEKTON_URL
   resources:
     inputs:
     - name: source-repo
       type: git
+    - name: pr
+      type: pullRequest
+    outputs:
+    - name: pr
+      type: pullRequest
   steps:
-  - name: check-deprication
+  - name: check-syntax
     workingdir: /workspace/source-repo
     image: garethr/kubeval:0.15.0
     command:
-    - kubeval
-    - -d
-    - /workspace/source-repo/manifests
-    # TODO: auto detect kubernetes version
-    # - -v
-    # - v1.16.13
+    - sh
+    - -c
+    - |
+      kubeval -d /workspace/source-repo/manifests
+      # TODO: auto detect kubernetes version
+      # -v v1.16.13
+
+      if [ $? -eq 0 ]; then
+        STATUS=success
+      else
+        STATUS=failure
+      fi
+
+      cp -r /workspace/pr/* /workspace/output/pr/;
+      cat << _EOF_ > /workspace/output/pr/status/check-syntax-kubeval.json
+      {
+        "Label": "check-syntax-kubeval",
+        "State": "$STATUS",
+        "Desc": "check syntax manifests by kubeval",
+        "Target": "https://$(params.TEKTON_URL)/#/namespaces/tekton-pipelines/pipelineruns/$(params.PIPELINERUN_NAME)?pipelineTask=check-syntax-kubeval&step=check-syntax"
+      }
+      _EOF_
+      if [ "$STATUS" != "success" ]; then exit 1; fi
     resources:
       limits:
         cpu: 100m
@@ -417,24 +467,44 @@ metadata:
   name: check-policy-conftest
   namespace: tekton-pipelines
 spec:
+  params:
+  - name: PIPELINERUN_NAME
+  - name: TEKTON_URL
   resources:
     inputs:
     - name: source-repo
       type: git
+    - name: pr
+      type: pullRequest
+    outputs:
+    - name: pr
+      type: pullRequest
   steps:
-  - name: check-deprication
+  - name: check-policy
     workingdir: /workspace/source-repo
     image: instrumenta/conftest:v0.20.0
     command:
-    - conftest
-    - test
-    - policy
-    - /policy
-    - --input
-    - yaml
-    - --namespace
-    - main
-    - /workspace/source-repo/manifests
+    - sh
+    - -c
+    - |
+      conftest test --policy /policy --input yaml --namespace main /workspace/source-repo/manifests
+
+      if [ $? -eq 0 ]; then
+        STATUS=success
+      else
+        STATUS=failure
+      fi
+
+      cp -r /workspace/pr/* /workspace/output/pr/;
+      cat << _EOF_ > /workspace/output/pr/status/check-policy-conftest.json
+      {
+        "Label": "check-policy-conftest",
+        "State": "$STATUS",
+        "Desc": "check syntax manifests by kubeval",
+        "Target": "https://$(params.TEKTON_URL)/#/namespaces/tekton-pipelines/pipelineruns/$(params.PIPELINERUN_NAME)?pipelineTask=check-policy-conftest&step=check-policy"
+      }
+      _EOF_
+      if [ "$STATUS" != "success" ]; then exit 1; fi
     resources:
       limits:
         cpu: 100m
@@ -459,29 +529,63 @@ metadata:
   namespace: tekton-pipelines
 spec:
   params:
-  - name: COMMIT_HASH
+    - name: COMMIT_HASH
+    - name: PIPELINERUN_NAME
+    - name: TEKTON_URL
   resources:
+    - name: pr
+      type: pullRequest
     - name: source-repo
       type: git
   tasks:
   - name: check-deprication-pluto
     taskRef:
       name: check-deprication-pluto
+    params:
+    - name: PIPELINERUN_NAME
+      value: $(params.PIPELINERUN_NAME)
+    - name: TEKTON_URL
+      value: $(params.TEKTON_URL)
     resources:
       inputs:
       - name: source-repo
         resource: source-repo
+      - name: pr
+        resource: pr
+      outputs:
+      - name: pr
+        resource: pr
   - name: check-syntax-kubeval
     taskRef:
       name: check-syntax-kubeval
+    params:
+    - name: PIPELINERUN_NAME
+      value: $(params.PIPELINERUN_NAME)
+    - name: TEKTON_URL
+      value: $(params.TEKTON_URL)
     resources:
       inputs:
       - name: source-repo
         resource: source-repo
+      - name: pr
+        resource: pr
+      outputs:
+      - name: pr
+        resource: pr
   - name: check-policy-conftest
     taskRef:
       name: check-policy-conftest
+    params:
+    - name: PIPELINERUN_NAME
+      value: $(params.PIPELINERUN_NAME)
+    - name: TEKTON_URL
+      value: $(params.TEKTON_URL)
     resources:
       inputs:
       - name: source-repo
         resource: source-repo
+      - name: pr
+        resource: pr
+      outputs:
+      - name: pr
+        resource: pr
