@@ -24,7 +24,7 @@ spec:
       serviceAccountName: microservice-b
       containers:
         - name: microservice-b
-          image: harbor.kncicd.tk/library/microservice-b:03e382cdedaecd6f607f3926642ad0da77e68331
+          image: registry-harbor-core.harbor.svc.cluster.local/library/microservice-b:241f51d8ff3d2496b09e1066a5bc3856080c87dd
           resources:
             requests:
               cpu: 50m
