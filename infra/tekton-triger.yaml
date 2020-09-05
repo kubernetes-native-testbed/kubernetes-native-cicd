@@ -47,7 +47,7 @@ spec:
               secretKey: github-webhook-secret
               namespace: tekton-pipelines
             eventTypes:
-              - pull_requests
+              - pull_request
 ---
 apiVersion: triggers.tekton.dev/v1alpha1
 kind: TriggerBinding
@@ -86,8 +86,10 @@ spec:
   params:
     - name: GIT_REPO_URL
       value: "$(body.repository.url)"
+    - name: PR_NUMBER
+      value: $(body.number)
     - name: COMMIT_HASH
-      value: $(body.after)
+      value: $(body.pull_request.head.sha)
 ---
 apiVersion: triggers.tekton.dev/v1alpha1
 kind: TriggerTemplate
@@ -129,10 +131,10 @@ spec:
         resourceSpec:
           type: git
           params:
-            - name: revision
-              value: $(tt.params.COMMIT_HASH)
             - name: url
               value: $(tt.params.GIT_REPO_URL)
+            - name: revision
+              value: $(tt.params.COMMIT_HASH)
       - name: image-repo
         resourceSpec:
           type: image
