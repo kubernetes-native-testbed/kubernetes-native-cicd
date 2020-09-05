@@ -1,0 +1,119 @@
+---
+apiVersion: triggers.tekton.dev/v1alpha1
+kind: EventListener
+metadata:
+  name: github-listener
+  namespace: tekton-pipelines
+spec:
+  serviceAccountName: tekton-sa
+  serviceType: ClusterIP
+  triggers:
+    - template:
+        name: microservice-ci-trigger
+      bindings:
+      - ref: microservice-a-ci
+      interceptors:
+        - github:
+            secretRef:
+              secretName: github-webhook-credentials
+              secretKey: github-webhook-secret
+              namespace: tekton-pipelines
+            eventTypes:
+              - push
+        - cel:
+           filter: body.ref == 'refs/heads/develop' && !body.commits[0].message.startsWith('[Update manifest]')
+    - template:
+        name: microservice-ci-trigger
+      bindings:
+      - ref: microservice-b-ci
+      interceptors:
+        - github:
+            secretRef:
+              secretName: github-webhook-credentials
+              secretKey: github-webhook-secret
+              namespace: tekton-pipelines
+            eventTypes:
+              - push
+        - cel:
+           filter: body.ref == 'refs/heads/develop' && !body.commits[0].message.startsWith('[Update manifest]')
+---
+apiVersion: triggers.tekton.dev/v1alpha1
+kind: TriggerBinding
+metadata:
+  name: microservice-a-ci
+  namespace: tekton-pipelines
+spec:
+  params:
+    - name: GIT_REPO_URL
+      value: "$(body.repository.url)"
+    - name: COMMIT_HASH
+      value: $(body.after)
+    - name: MICROSERVICE
+      value: microservice-a
+---
+apiVersion: triggers.tekton.dev/v1alpha1
+kind: TriggerBinding
+metadata:
+  name: microservice-b-ci
+  namespace: tekton-pipelines
+spec:
+  params:
+    - name: GIT_REPO_URL
+      value: "$(body.repository.url)"
+    - name: COMMIT_HASH
+      value: $(body.after)
+    - name: MICROSERVICE
+      value: microservice-b
+---
+apiVersion: triggers.tekton.dev/v1alpha1
+kind: TriggerTemplate
+metadata:
+  name: microservice-ci-trigger
+  namespace: tekton-pipelines
+spec:
+  params:
+    - name: MICROSERVICE
+      default: somemicroservice
+    - name: COMMIT_HASH
+      description: GitHub commit hash
+      default: xxxxxxxx
+    - name: REGISTRY_REPO
+      description: registry's repo path
+      default: registry-harbor-core.harbor.svc.cluster.local/library
+    - name: GIT_REPO_URL
+      default: ""
+  resourcetemplates:
+  - apiVersion: tekton.dev/v1beta1
+    kind: PipelineRun
+    metadata:
+      name: ci-$(tt.params.MICROSERVICE)-$(uid)
+      namespace: tekton-pipelines
+    spec:
+      serviceAccountName: tekton-sa
+      timeout: 1h0m0s
+      pipelineRef:
+        name: ci
+      params:
+        - name: MICROSERVICE
+          value: $(tt.params.MICROSERVICE)
+        - name: COMMIT_HASH
+          value: $(tt.params.COMMIT_HASH)
+        - name: REGISTRY_REPO
+          value: $(tt.params.REGISTRY_REPO)
+      resources:
+      - name: source-repo
+        resourceSpec:
+          type: git
+          params:
+            - name: revision
+              value: $(tt.params.COMMIT_HASH)
+            - name: url
+              value: $(tt.params.GIT_REPO_URL)
+      - name: image-repo
+        resourceSpec:
+          type: image
+          params:
+            - name: url
+              value: $(tt.params.REGISTRY_REPO)/$(tt.params.MICROSERVICE):$(tt.params.COMMIT_HASH)
+
+

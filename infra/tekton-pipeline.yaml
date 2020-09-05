@@ -1,0 +1,316 @@
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: harbor-credentials
+  namespace: tekton-pipelines
+  annotations:
+    tekton.dev/docker-0: https://registry-harbor-core.harbor.svc.cluster.local/v2/
+type: kubernetes.io/basic-auth
+stringData:
+  username: admin
+  password: admin
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: tekton-sa
+  namespace: tekton-pipelines
+secrets:
+- name: harbor-credentials
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: tekton-sa
+  namespace: tekton-pipelines
+rules:
+# Permissions for every EventListener deployment to function
+- apiGroups: ["triggers.tekton.dev"]
+  resources: ["eventlisteners", "triggerbindings", "triggertemplates"]
+  verbs: ["get"]
+- apiGroups: [""]
+  # secrets are only needed for Github/Gitlab interceptors
+  resources: ["configmaps", "secrets"]
+  verbs: ["get", "list", "watch"]
+# Permissions to create resources in associated TriggerTemplates
+- apiGroups: ["tekton.dev"]
+  resources: ["pipelineruns", "pipelineresources", "taskruns"]
+  verbs: ["create"]
+- apiGroups: [""]
+  resources: ["serviceaccounts"]
+  verbs: ["impersonate"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: tekton-sa
+  namespace: tekton-pipelines
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: tekton-sa
+subjects:
+- kind: ServiceAccount
+  name: tekton-sa
+  namespace: tekton-pipelines
+---
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: kaniko-build-and-push
+  namespace: tekton-pipelines
+spec:
+  params:
+    - name: DOCKERFILE
+      description: Path to the Dockerfile to build.
+      default: ./Dockerfile
+    - name: CONTEXT
+      description: The build context used by Kaniko.
+      default: ./
+    - name: EXTRA_ARGS
+      default: ""
+    - name: BUILDER_IMAGE
+      description: The image on which builds will run
+      default: gcr.io/kaniko-project/executor:v0.13.0
+  resources:
+    inputs:
+    - name: source-repo
+      type: git
+    outputs:
+    - name: image-repo
+      type: image
+  steps:
+  - name: build-and-push
+    workingdir: /workspace/source-repo
+    image: $(inputs.params.BUILDER_IMAGE)
+    # specifying DOCKER_CONFIG is required to allow kaniko to detect docker credential
+    # https://github.com/tektoncd/pipeline/pull/706
+    env:
+    - name: DOCKER_CONFIG
+      value: /tekton/home/.docker
+    command:
+    - /kaniko/executor
+    - $(inputs.params.EXTRA_ARGS)
+    - --dockerfile=$(inputs.params.DOCKERFILE)
+    - --context=/workspace/source-repo/$(inputs.params.CONTEXT)
+    - --destination=$(outputs.resources.image-repo.url)
+    - --cache=false
+    - --insecure
+    - --skip-tls-verify
+    resources:
+      limits:
+        cpu: 1000m
+        memory: "1Gi"
+      requests:
+        cpu: 100m
+        memory: "128Mi"
+    securityContext:
+      runAsUser: 0
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ci-scripts
+  namespace: tekton-pipelines
+data:
+  check_target_microservice.sh: |-
+    #!/bin/bash
+    git fetch --unshallow
+    echo Changed file at commit ${COMMIT_HASH}
+    git diff --name-only `git show ${COMMIT_HASH} --pretty="MERGE: %P"| grep -e "^MERGE: " | sed -e 's|^MERGE: ||'`
+
+    IS_CHANGED=$(git diff --name-only `git show ${COMMIT_HASH} --pretty="MERGE: %P"| grep -e "^MERGE: " | sed -e 's|^MERGE: ||'` | grep -e "^microservices/${MICROSERVICE}/")
+    if [ -z "${IS_CHANGED}" ]; then
+      echo "commit ${COMMIT_HASH} is not for ${MICROSERVICE} microservices."
+      exit 0;
+    fi
+
+  upload_manifests.sh: |-
+    #!/bin/bash
+
+    git checkout -b ${MICROSERVICE}-${COMMIT_HASH};
+    git config --global user.email "${TB_GITHUB_USER}@example.com";
+    git config --global user.name "${TB_GITHUB_USER}";
+    git config --global credential.helper "store --file ~/.config/gh/git-cmd-credential"
+    mkdir -p ~/.config/gh
+    cat << _EOF_ > ~/.config/gh/git-cmd-credential
+    https://${TB_GITHUB_USER}:${TB_GITHUB_TOKEN}@github.com
+    _EOF_
+    cat << _EOF_ > ~/.config/gh/config.yml
+    hosts:
+      github.com:
+        - user: ${TB_GITHUB_USER}
+          oauth_token: ${TB_GITHUB_TOKEN}
+    _EOF_
+    sed -i -e "s|image: .*/${MICROSERVICE}:.*|image: ${REGISTRY_REPO}/${MICROSERVICE}:${COMMIT_HASH}|g" /workspace/source-repo/manifests/${MICROSERVICE}/app.yaml;
+    git add --all;
+    git commit -m "[Update manifest] ${MICROSERVICE} for new image tag ${COMMIT_HASH}";
+    git push origin ${MICROSERVICE}-${COMMIT_HASH};
+    cat << _EOF_ > ~/pr-body.txt
+    RP is opened at $(date +%s)
+
+    Changes:
+    https://github.com/${TB_GITHUB_ORG_NAME}/kubernetes-native-cicd/commit/${COMMIT_HASH}
+
+    Files:
+    https://github.com/${TB_GITHUB_ORG_NAME}/kubernetes-native-cicd/tree/${COMMIT_HASH}/microservices/${MICROSERVICE}
+    _EOF_
+
+    gh pr create --repo ${TB_GITHUB_ORG_NAME}/kubernetes-native-cicd --base develop --title "[Update manifest] ${MICROSERVICE} for new image tag ${COMMIT_HASH}" --body "$(cat ~/pr-body.txt)";
+---
+apiVersion: tekton.dev/v1alpha1
+kind: Condition
+metadata:
+  name: check-is-target-microservice
+  namespace: tekton-pipelines
+spec:
+  params:
+    - name: MICROSERVICE
+    - name: COMMIT_HASH
+  resources:
+    - name: source-repo
+      type: git
+  check:
+    workingdir: /workspace/source-repo
+    image: k8stestbed/github-cli:v0.11.1
+    env:
+      - name: MICROSERVICE
+        value: $(params.MICROSERVICE)
+      - name: COMMIT_HASH
+        value: $(params.COMMIT_HASH)
+    script: git fetch --unshallow; IS_CHANGED=$(git diff --name-only `git show ${COMMIT_HASH} --pretty="%P" | head -n 1` | grep -e "^microservices/${MICROSERVICE}/"); if [ -z "${IS_CHANGED}" ]; then exit 1; fi
+---
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: pull-request-manifest
+  namespace: tekton-pipelines
+spec:
+  params:
+    - name: MICROSERVICE
+      default: somemicroservice 
+    - name: COMMIT_HASH
+      default: xxxxxxxx
+    - name: REGISTRY_REPO
+      default: registry-harbor-core.harbor.svc.cluster.local/library
+  resources:
+    inputs:
+    - name: source-repo
+      type: git
+  steps:
+  - name: pull-request-manifest
+    workingdir: /workspace/source-repo
+    image: k8stestbed/github-cli:v0.11.1
+    command:
+    - sh
+    - -c
+    - /data/upload_manifests.sh
+    env:
+      - name: MICROSERVICE
+        value: $(inputs.params.MICROSERVICE)
+      - name: COMMIT_HASH
+        value: $(inputs.params.COMMIT_HASH)
+      - name: REGISTRY_REPO
+        value: $(inputs.params.REGISTRY_REPO)
+      - name: TB_GITHUB_USER
+        valueFrom:
+          secretKeyRef:
+            name: github-credentials
+            key: TB_GITHUB_USER
+      - name: TB_GITHUB_TOKEN
+        valueFrom:
+          secretKeyRef:
+            name: github-credentials
+            key: TB_GITHUB_TOKEN
+      - name: TB_GITHUB_ORG_NAME
+        valueFrom:
+          secretKeyRef:
+            name: github-credentials
+            key: TB_GITHUB_ORG_NAME
+    resources:
+      limits:
+        cpu: 2
+        memory: "2Gi"
+      requests:
+        cpu: 1
+        memory: "1Gi"
+    securityContext:
+      runAsUser: 0
+    volumeMounts:
+      - name:  entrypoint-cm
+        mountPath: /data
+  volumes:
+    - name: entrypoint-cm
+      configMap:
+        name: ci-scripts
+        defaultMode: 493 # mode 755
+---
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: ci
+  namespace: tekton-pipelines
+spec:
+  resources:
+    - name: source-repo
+      type: git
+    - name: image-repo
+      type: image
+  params:
+  - name: MICROSERVICE
+  - name: COMMIT_HASH
+  - name: REGISTRY_REPO
+  tasks:
+  - name: build-and-push
+    taskRef:
+      name: kaniko-build-and-push
+    params:
+    - name: DOCKERFILE
+      value: ./microservices/$(params.MICROSERVICE)/Dockerfile
+    - name: CONTEXT
+      value: ./microservices/$(params.MICROSERVICE)
+    resources:
+      inputs:
+      - name: source-repo
+        resource: source-repo
+      outputs:
+      - name: image-repo
+        resource: image-repo
+    conditions:
+      - conditionRef: check-is-target-microservice
+        params:
+          - name: MICROSERVICE
+            value: $(params.MICROSERVICE)
+          - name: COMMIT_HASH
+            value: $(params.COMMIT_HASH)
+        resources:
+          - name: source-repo
+            resource: source-repo
+  - name: pull-request-manifest
+    taskRef:
+      name: pull-request-manifest
+    runAfter:
+    - build-and-push
+    params:
+    - name: MICROSERVICE
+      value: $(params.MICROSERVICE)
+    - name: COMMIT_HASH
+      value: $(params.COMMIT_HASH)
+    - name: REGISTRY_REPO
+      value: $(params.REGISTRY_REPO)
+    resources:
+      inputs:
+      - name: source-repo
+        resource: source-repo
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: github-webhook-credentials
+  namespace: tekton-pipelines
+type: Opaque
+stringData:
+  github-webhook-secret: sample-github-webhook-secret
+---

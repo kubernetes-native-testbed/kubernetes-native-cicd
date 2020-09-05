@@ -1,0 +1,42 @@
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: microservice-a-cd
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/kubernetes-native-testbed/kubernetes-native-cicd.git
+    targetRevision: develop
+    path: manifests/microservice-a/
+    directory:
+      recurse: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: microservice-a
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: microservice-b-cd
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/kubernetes-native-testbed/kubernetes-native-cicd.git
+    targetRevision: develop
+    path: manifests/microservice-b/
+    directory:
+      recurse: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: microservice-b
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
