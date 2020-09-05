@@ -1,5 +1,5 @@
 ---
-apiVersion: apps/v1
+apiVersion: extensions/v1beta1
 kind: Deployment
 metadata:
   name: microservice-a
@@ -7,19 +7,17 @@ metadata:
   labels:
     app.kubernetes.io/instance: microservice-a
     app.kubernetes.io/part-of: microservice-a
-    app.kubernetes.io/name: nginx
-    app.kubernetes.io/component: app
 spec:
   replicas: 2
   selector:
     matchLabels:
       service: microservice-a
-      role: app
+      role: 2
   template:
     metadata:
       labels:
         service: microservice-a
-        role: app
+        role: 2
     spec:
       serviceAccountName: microservice-a
       containers:
