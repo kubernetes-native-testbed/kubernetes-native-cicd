@@ -303,7 +303,6 @@ spec:
       inputs:
       - name: source-repo
         resource: source-repo
-
 ---
 apiVersion: v1
 kind: Secret
@@ -314,3 +313,174 @@ type: Opaque
 stringData:
   github-webhook-secret: sample-github-webhook-secret
 ---
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: check-deprication-pluto
+  namespace: tekton-pipelines
+spec:
+  resources:
+    inputs:
+    - name: source-repo
+      type: git
+  steps:
+  - name: check-deprication
+    workingdir: /workspace/source-repo
+    image: renaultdigital/pluto:v3.4.1
+    command:
+    - pluto
+    - detect-files
+    - -d
+    - /workspace/source-repo/manifests
+    # TODO: auto detect kubernetes version
+    # - -v
+    # - v1.16.13
+    resources:
+      limits:
+        cpu: 100m
+        memory: "256Mi"
+      requests:
+        cpu: 50m
+        memory: "128Mi"
+    securityContext:
+      runAsUser: 0
+---
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: check-syntax-kubeval
+  namespace: tekton-pipelines
+spec:
+  resources:
+    inputs:
+    - name: source-repo
+      type: git
+  steps:
+  - name: check-deprication
+    workingdir: /workspace/source-repo
+    image: garethr/kubeval:0.15.0
+    command:
+    - kubeval
+    - -d
+    - /workspace/source-repo/manifests
+    # TODO: auto detect kubernetes version
+    # - -v
+    # - v1.16.13
+    resources:
+      limits:
+        cpu: 100m
+        memory: "256Mi"
+      requests:
+        cpu: 50m
+        memory: "128Mi"
+    securityContext:
+      runAsUser: 0
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: conftest-policy
+  namespace: tekton-pipelines
+data:
+  main.rego: |-
+    package main
+
+    required_deployment_labels {
+        input.metadata.labels["app.kubernetes.io/name"]
+        input.metadata.labels["app.kubernetes.io/instance"]
+        input.metadata.labels["app.kubernetes.io/component"]
+        input.metadata.labels["app.kubernetes.io/part-of"]
+    }
+
+    workload_resources = [
+      "Deployment",
+      "DaemonSet",
+      "StatefulSet",
+    ]
+
+    deny[msg] {
+      input.kind == workload_resources[_]
+      not required_deployment_labels
+      msg = sprintf("Please use Recommended labels: [Kind=%s, Name=%s]", [input.kind, input.metadata.name])
+    }
+
+    deny[msg] {
+      input.kind == workload_resources[_]
+      container := input.spec.template.spec.containers[_]
+      container.securityContext.privileged == true
+
+      msg = sprintf("Do not use privileged containers: [Kind=%s, Name=%s, Container=%s]", [input.kind, input.metadata.name, container.name])
+    }
+---
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: check-policy-conftest
+  namespace: tekton-pipelines
+spec:
+  resources:
+    inputs:
+    - name: source-repo
+      type: git
+  steps:
+  - name: check-deprication
+    workingdir: /workspace/source-repo
+    image: instrumenta/conftest:v0.20.0
+    command:
+    - conftest
+    - test
+    - policy
+    - /policy
+    - --input
+    - yaml
+    - --namespace
+    - main
+    - /workspace/source-repo/manifests
+    resources:
+      limits:
+        cpu: 100m
+        memory: "256Mi"
+      requests:
+        cpu: 50m
+        memory: "128Mi"
+    securityContext:
+      runAsUser: 0
+    volumeMounts:
+      - name:  policy-cm
+        mountPath: /policy
+  volumes:
+    - name: policy-cm
+      configMap:
+        name: conftest-policy
+---
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: check-manifests
+  namespace: tekton-pipelines
+spec:
+  resources:
+    - name: source-repo
+      type: git
+  tasks:
+  - name: check-deprication-pluto
+    taskRef:
+      name: check-deprication-pluto
+    resources:
+      inputs:
+      - name: source-repo
+        resource: source-repo
+  - name: check-syntax-kubeval
+    taskRef:
+      name: check-syntax-kubeval
+    resources:
+      inputs:
+      - name: source-repo
+        resource: source-repo
+  - name: check-policy-conftest
+    taskRef:
+      name: check-policy-conftest
+    resources:
+      inputs:
+      - name: source-repo
+        resource: source-repo

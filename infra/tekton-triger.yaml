@@ -36,6 +36,18 @@ spec:
               - push
         - cel:
            filter: body.ref == 'refs/heads/develop' && !body.commits[0].message.startsWith('[Update manifest]')
+    - template:
+        name: check-manifests-trigger
+      bindings:
+      - ref: check-manifests
+      interceptors:
+        - github:
+            secretRef:
+              secretName: github-webhook-credentials
+              secretKey: github-webhook-secret
+              namespace: tekton-pipelines
+            eventTypes:
+              - pull_requests
 ---
 apiVersion: triggers.tekton.dev/v1alpha1
 kind: TriggerBinding
@@ -64,6 +76,18 @@ spec:
       value: $(body.after)
     - name: MICROSERVICE
       value: microservice-b
+---
+apiVersion: triggers.tekton.dev/v1alpha1
+kind: TriggerBinding
+metadata:
+  name: check-manifests
+  namespace: tekton-pipelines
+spec:
+  params:
+    - name: GIT_REPO_URL
+      value: "$(body.repository.url)"
+    - name: COMMIT_HASH
+      value: $(body.after)
 ---
 apiVersion: triggers.tekton.dev/v1alpha1
 kind: TriggerTemplate
@@ -115,5 +139,39 @@ spec:
           params:
             - name: url
               value: $(tt.params.REGISTRY_REPO)/$(tt.params.MICROSERVICE):$(tt.params.COMMIT_HASH)
-
-
+---
+apiVersion: triggers.tekton.dev/v1alpha1
+kind: TriggerTemplate
+metadata:
+  name: check-manifests-trigger
+  namespace: tekton-pipelines
+spec:
+  params:
+    - name: COMMIT_HASH
+      description: GitHub commit hash
+      default: xxxxxxxx
+    - name: GIT_REPO_URL
+      default: ""
+  resourcetemplates:
+  - apiVersion: tekton.dev/v1beta1
+    kind: PipelineRun
+    metadata:
+      name: check-manifests-$(uid)
+      namespace: tekton-pipelines
+    spec:
+      serviceAccountName: tekton-sa
+      timeout: 1h0m0s
+      pipelineRef:
+        name: check-manifests
+      params:
+        - name: COMMIT_HASH
+          value: $(tt.params.COMMIT_HASH)
+      resources:
+      - name: source-repo
+        resourceSpec:
+          type: git
+          params:
+            - name: revision
+              value: $(tt.params.COMMIT_HASH)
+            - name: url
+              value: $(tt.params.GIT_REPO_URL)

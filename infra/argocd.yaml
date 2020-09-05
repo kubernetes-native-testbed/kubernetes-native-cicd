@@ -2,7 +2,7 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: microservice-a-cd
+  name: microservice-a
   namespace: argocd
 spec:
   project: default
@@ -23,7 +23,7 @@ spec:
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: microservice-b-cd
+  name: microservice-b
   namespace: argocd
 spec:
   project: default
