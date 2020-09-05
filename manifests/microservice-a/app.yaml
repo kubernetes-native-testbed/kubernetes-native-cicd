@@ -10,7 +10,7 @@ metadata:
     app.kubernetes.io/name: nginx
     app.kubernetes.io/component: app
 spec:
-  replicas: 2
+  replicas: 3
   selector:
     matchLabels:
       service: microservice-a
