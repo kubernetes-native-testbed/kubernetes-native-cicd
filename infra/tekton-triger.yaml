@@ -85,7 +85,7 @@ metadata:
 spec:
   params:
     - name: GIT_REPO_URL
-      value: "$(body.repository.url)"
+      value: "$(body.pull_request.head.repo.html_url)"
     - name: PR_NUMBER
       value: $(body.number)
     - name: COMMIT_HASH
@@ -154,6 +154,8 @@ spec:
       default: xxxxxxxx
     - name: GIT_REPO_URL
       default: ""
+    - name: PR_NUMBER
+      default: "0"
   resourcetemplates:
   - apiVersion: tekton.dev/v1beta1
     kind: PipelineRun
@@ -166,14 +168,32 @@ spec:
       pipelineRef:
         name: check-manifests
       params:
+        - name: PR_NUMBER
+          value: $(tt.params.PR_NUMBER)
         - name: COMMIT_HASH
           value: $(tt.params.COMMIT_HASH)
+        - name: PIPELINERUN_NAME
+          value: check-manifests-$(uid)
+        - name: TEKTON_URL
+          value: tekton.kncicd.tk
       resources:
+      - name: pr
+        resourceSpec:
+          type: pullRequest
+          params:
+            - name: url
+              value: $(tt.params.GIT_REPO_URL)/pull/$(tt.params.PR_NUMBER)
+            - name: provider
+              value: github
+          secrets:
+            - fieldName: authToken
+              secretName: github-credentials
+              secretKey: TB_GITHUB_TOKEN
       - name: source-repo
         resourceSpec:
           type: git
           params:
             - name: revision
-              value: $(tt.params.COMMIT_HASH)
+              value: refs/pull/$(tt.params.PR_NUMBER)/head
             - name: url
               value: $(tt.params.GIT_REPO_URL)

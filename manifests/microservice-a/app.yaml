@@ -24,7 +24,7 @@ spec:
       serviceAccountName: microservice-a
       containers:
         - name: microservice-a
-          image: harbor.34.84.199.182.nip.io/library/microservice-a:03e382cdedaecd6f607f3926642ad0da77e68331
+          image: harbor.kncicd.tk/library/microservice-a:03e382cdedaecd6f607f3926642ad0da77e68331
           resources:
             requests:
               cpu: 50m
