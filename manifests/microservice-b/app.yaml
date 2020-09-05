@@ -21,9 +21,10 @@ spec:
         service: microservice-b
         role: app
     spec:
+      serviceAccountName: microservice-b
       containers:
         - name: microservice-b
-          image: registry-harbor-core.harbor.svc.cluster.local/library/microservice-b:latest-cache
+          image: harbor.34.84.199.182.nip.io/library/microservice-b:03e382cdedaecd6f607f3926642ad0da77e68331
           resources:
             requests:
               cpu: 100m
