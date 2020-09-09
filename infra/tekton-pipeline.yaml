@@ -18,7 +18,7 @@ metadata:
   namespace: tekton-pipelines
 secrets:
 - name: harbor-credentials
-- name: gh-credentials
+- name: github-credentials
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
@@ -143,7 +143,7 @@ data:
         user: ${TB_GITHUB_USER}
         oauth_token: ${TB_GITHUB_TOKEN}
     _EOF_
-    sed -i -e "s|image: .*/${MICROSERVICE}:.*|image: ${REGISTRY_REPO}/${MICROSERVICE}:${COMMIT_HASH}|g" /workspace/source-repo/manifests/${MICROSERVICE}/app.yaml;
+    sed -i -e "s|image: .*/${MICROSERVICE}:.*|image: harbor.${DOMAIN}/${MICROSERVICE}:${COMMIT_HASH}|g" /workspace/source-repo/manifests/${MICROSERVICE}/app.yaml;
     git add --all;
     git commit -m "[Update manifest] ${MICROSERVICE} for new image tag ${COMMIT_HASH}";
     git push origin ${MICROSERVICE}-${COMMIT_HASH};
@@ -189,11 +189,9 @@ metadata:
 spec:
   params:
     - name: MICROSERVICE
-      default: somemicroservice 
     - name: COMMIT_HASH
-      default: xxxxxxxx
     - name: REGISTRY_REPO
-      default: registry-harbor-core.harbor.svc.cluster.local/library
+    - name: DOMAIN
   resources:
     inputs:
     - name: source-repo
@@ -207,6 +205,8 @@ spec:
     - -c
     - /data/upload_manifests.sh
     env:
+      - name: DOMAIN
+        value: $(params.DOMAIN)
       - name: MICROSERVICE
         value: $(params.MICROSERVICE)
       - name: COMMIT_HASH
@@ -217,17 +217,17 @@ spec:
         valueFrom:
           secretKeyRef:
             name: github-credentials
-            key: TB_GITHUB_USER
+            key: username
       - name: TB_GITHUB_TOKEN
         valueFrom:
           secretKeyRef:
             name: github-credentials
-            key: TB_GITHUB_TOKEN
+            key: password
       - name: TB_GITHUB_ORG_NAME
         valueFrom:
           secretKeyRef:
             name: github-credentials
-            key: TB_GITHUB_ORG_NAME
+            key: organization
     resources:
       limits:
         cpu: 2
@@ -261,6 +261,7 @@ spec:
   - name: MICROSERVICE
   - name: COMMIT_HASH
   - name: REGISTRY_REPO
+  - name: DOMAIN
   tasks:
   - name: build-and-push
     taskRef:
@@ -299,6 +300,8 @@ spec:
       value: $(params.COMMIT_HASH)
     - name: REGISTRY_REPO
       value: $(params.REGISTRY_REPO)
+    - name: DOMAIN
+      value: $(params.DOMAIN)
     resources:
       inputs:
       - name: source-repo
@@ -321,7 +324,7 @@ metadata:
 spec:
   params:
   - name: PIPELINERUN_NAME
-  - name: TEKTON_URL
+  - name: DOMAIN
   resources:
     inputs:
     - name: source-repo
@@ -355,7 +358,7 @@ spec:
         "Label": "check-deprication-pluto",
         "State": "$STATUS",
         "Desc": "check deplicated manifests by pluto",
-        "Target": "https://$(params.TEKTON_URL)/#/namespaces/tekton-pipelines/pipelineruns/$(params.PIPELINERUN_NAME)?pipelineTask=check-deprication-pluto&step=check-deprication"
+        "Target": "https://tekton.$(params.DOMAIN)/#/namespaces/tekton-pipelines/pipelineruns/$(params.PIPELINERUN_NAME)?pipelineTask=check-deprication-pluto&step=check-deprication"
       }
       _EOF_
       if [ "$STATUS" != "success" ]; then exit 1; fi
@@ -377,7 +380,7 @@ metadata:
 spec:
   params:
   - name: PIPELINERUN_NAME
-  - name: TEKTON_URL
+  - name: DOMAIN
   resources:
     inputs:
     - name: source-repo
@@ -411,7 +414,7 @@ spec:
         "Label": "check-syntax-kubeval",
         "State": "$STATUS",
         "Desc": "check syntax manifests by kubeval",
-        "Target": "https://$(params.TEKTON_URL)/#/namespaces/tekton-pipelines/pipelineruns/$(params.PIPELINERUN_NAME)?pipelineTask=check-syntax-kubeval&step=check-syntax"
+        "Target": "https://tekton.$(params.DOMAIN)/#/namespaces/tekton-pipelines/pipelineruns/$(params.PIPELINERUN_NAME)?pipelineTask=check-syntax-kubeval&step=check-syntax"
       }
       _EOF_
       if [ "$STATUS" != "success" ]; then exit 1; fi
@@ -469,7 +472,7 @@ metadata:
 spec:
   params:
   - name: PIPELINERUN_NAME
-  - name: TEKTON_URL
+  - name: DOMAIN
   resources:
     inputs:
     - name: source-repo
@@ -501,7 +504,7 @@ spec:
         "Label": "check-policy-conftest",
         "State": "$STATUS",
         "Desc": "check syntax manifests by kubeval",
-        "Target": "https://$(params.TEKTON_URL)/#/namespaces/tekton-pipelines/pipelineruns/$(params.PIPELINERUN_NAME)?pipelineTask=check-policy-conftest&step=check-policy"
+        "Target": "https://tekton.$(params.DOMAIN)/#/namespaces/tekton-pipelines/pipelineruns/$(params.PIPELINERUN_NAME)?pipelineTask=check-policy-conftest&step=check-policy"
       }
       _EOF_
       if [ "$STATUS" != "success" ]; then exit 1; fi
@@ -531,7 +534,7 @@ spec:
   params:
     - name: COMMIT_HASH
     - name: PIPELINERUN_NAME
-    - name: TEKTON_URL
+    - name: DOMAIN
   resources:
     - name: pr
       type: pullRequest
@@ -544,8 +547,8 @@ spec:
     params:
     - name: PIPELINERUN_NAME
       value: $(params.PIPELINERUN_NAME)
-    - name: TEKTON_URL
-      value: $(params.TEKTON_URL)
+    - name: DOMAIN
+      value: $(params.DOMAIN)
     resources:
       inputs:
       - name: source-repo
@@ -561,8 +564,8 @@ spec:
     params:
     - name: PIPELINERUN_NAME
       value: $(params.PIPELINERUN_NAME)
-    - name: TEKTON_URL
-      value: $(params.TEKTON_URL)
+    - name: DOMAIN
+      value: $(params.DOMAIN)
     resources:
       inputs:
       - name: source-repo
@@ -578,8 +581,8 @@ spec:
     params:
     - name: PIPELINERUN_NAME
       value: $(params.PIPELINERUN_NAME)
-    - name: TEKTON_URL
-      value: $(params.TEKTON_URL)
+    - name: DOMAIN
+      value: $(params.DOMAIN)
     resources:
       inputs:
       - name: source-repo

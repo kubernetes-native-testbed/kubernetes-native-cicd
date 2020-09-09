@@ -99,15 +99,13 @@ metadata:
 spec:
   params:
     - name: MICROSERVICE
-      default: somemicroservice
     - name: COMMIT_HASH
-      description: GitHub commit hash
-      default: xxxxxxxx
+    - name: GIT_REPO_URL
     - name: REGISTRY_REPO
       description: registry's repo path
       default: registry-harbor-core.harbor.svc.cluster.local/library
-    - name: GIT_REPO_URL
-      default: ""
+    - name: DOMAIN
+      value: YOUR_DOMAIN
   resourcetemplates:
   - apiVersion: tekton.dev/v1beta1
     kind: PipelineRun
@@ -126,6 +124,8 @@ spec:
           value: $(tt.params.COMMIT_HASH)
         - name: REGISTRY_REPO
           value: $(tt.params.REGISTRY_REPO)
+        - name: DOMAIN
+          value: $(tt.params.DOMAIN)
       resources:
       - name: source-repo
         resourceSpec:
@@ -150,10 +150,7 @@ metadata:
 spec:
   params:
     - name: COMMIT_HASH
-      description: GitHub commit hash
-      default: xxxxxxxx
     - name: GIT_REPO_URL
-      default: ""
     - name: PR_NUMBER
       default: "0"
   resourcetemplates:
@@ -174,8 +171,8 @@ spec:
           value: $(tt.params.COMMIT_HASH)
         - name: PIPELINERUN_NAME
           value: check-manifests-$(uid)
-        - name: TEKTON_URL
-          value: tekton.kncicd.tk
+        - name: DOMAIN
+          value: YOUR_DOMAIN
       resources:
       - name: pr
         resourceSpec:
@@ -188,7 +185,7 @@ spec:
           secrets:
             - fieldName: authToken
               secretName: github-credentials
-              secretKey: TB_GITHUB_TOKEN
+              secretKey: password
       - name: source-repo
         resourceSpec:
           type: git

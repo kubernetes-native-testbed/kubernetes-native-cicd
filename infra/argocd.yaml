@@ -7,7 +7,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/kubernetes-native-testbed/kubernetes-native-cicd.git
+    repoURL: https://github.com/YOUR_GITHUB_ORG_NAME/kubernetes-native-cicd.git
     targetRevision: develop
     path: manifests/microservice-a/
     directory:
@@ -19,6 +19,14 @@ spec:
     automated:
       prune: true
       selfHeal: true
+    retry:
+      limit: 0
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+    syncOptions:
+    - CreateNamespace=true
 ---
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -28,7 +36,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/kubernetes-native-testbed/kubernetes-native-cicd.git
+    repoURL: https://github.com/YOUR_GITHUB_ORG_NAME/kubernetes-native-cicd.git
     targetRevision: develop
     path: manifests/microservice-b/
     directory:
@@ -40,3 +48,11 @@ spec:
     automated:
       prune: true
       selfHeal: true
+    retry:
+      limit: 0
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+    syncOptions:
+    - CreateNamespace=true

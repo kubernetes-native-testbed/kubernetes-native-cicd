@@ -1,0 +1,157 @@
+---
+apiVersion: networking.k8s.io/v1beta1
+kind: Ingress
+metadata:
+  name: harbor
+  namespace: harbor
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    cert-manager.io/cluster-issuer: letsencrypt-production
+    nginx.ingress.kubernetes.io/proxy-body-size: 32m
+spec:
+  rules:
+  - host: harbor.YOUR_DOMAIN
+    http:
+      paths:
+      - path: /
+        backend:
+          serviceName: registry-harbor-portal
+          servicePort: 80
+      - path: /api/
+        backend:
+          serviceName: registry-harbor-core
+          servicePort: 80
+      - path: /service/
+        backend:
+          serviceName: registry-harbor-core
+          servicePort: 80
+      - path: /v2/
+        backend:
+          serviceName: registry-harbor-core
+          servicePort: 80
+      - path: /chartrepo/
+        backend:
+          serviceName: registry-harbor-core
+          servicePort: 80
+      - path: /c/
+        backend:
+          serviceName: registry-harbor-core
+          servicePort: 80
+  tls:
+  - hosts:
+    - harbor.YOUR_DOMAIN
+    secretName: harbor-tls
+---
+apiVersion: networking.k8s.io/v1beta1
+kind: Ingress
+metadata:
+  name: notary
+  namespace: harbor
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    cert-manager.io/cluster-issuer: letsencrypt-production
+spec:
+  rules:
+  - host: notary.YOUR_DOMAIN
+    http:
+      paths:
+      - path: /
+        backend:
+          serviceName: registry-harbor-notary-server
+          servicePort: 4443
+  tls:
+  - hosts:
+    - notary.YOUR_DOMAIN
+    secretName: notary-tls
+---
+apiVersion: networking.k8s.io/v1beta1
+kind: Ingress
+metadata:
+  name: tekton
+  namespace: tekton-pipelines
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    cert-manager.io/cluster-issuer: letsencrypt-production
+    nginx.ingress.kubernetes.io/auth-url: "https://oauth2.YOUR_DOMAIN/oauth2/auth"
+    nginx.ingress.kubernetes.io/auth-signin: "https://oauth2.YOUR_DOMAIN/oauth2/start?rd=$escaped_request_uri"
+spec:
+  rules:
+  - host: tekton.YOUR_DOMAIN
+    http:
+      paths:
+      - path: /
+        backend:
+          serviceName: tekton-dashboard
+          servicePort: 9097
+  tls:
+  - hosts:
+    - tekton.YOUR_DOMAIN
+    secretName: tekton-pipelines-tls
+---
+apiVersion: networking.k8s.io/v1beta1
+kind: Ingress
+metadata:
+  name: tekton-triggers
+  namespace: tekton-pipelines
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    cert-manager.io/cluster-issuer: letsencrypt-production
+spec:
+  rules:
+  - host: tekton.YOUR_DOMAIN
+    http:
+      paths:
+      - path: /event-listener
+        backend:
+          serviceName: el-github-listener
+          servicePort: 8080
+  tls:
+  - hosts:
+    - tekton.YOUR_DOMAIN
+    secretName: tekton-triggers-tls
+---
+apiVersion: networking.k8s.io/v1beta1
+kind: Ingress
+metadata:
+  name: argocd
+  namespace: argocd
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    cert-manager.io/cluster-issuer: letsencrypt-production
+    nginx.ingress.kubernetes.io/auth-url: "https://oauth2.YOUR_DOMAIN/oauth2/auth"
+    nginx.ingress.kubernetes.io/auth-signin: "https://oauth2.YOUR_DOMAIN/oauth2/start?rd=$escaped_request_uri"
+spec:
+  rules:
+  - host: argocd.YOUR_DOMAIN
+    http:
+      paths:
+      - path: /
+        backend:
+          serviceName: argocd-server
+          servicePort: 80
+  tls:
+  - hosts:
+    - argocd.YOUR_DOMAIN
+    secretName: argocd-tls
+---
+apiVersion: networking.k8s.io/v1beta1
+kind: Ingress
+metadata:
+  name: oauth2-proxy
+  namespace: kube-system
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    cert-manager.io/cluster-issuer: letsencrypt-production
+spec:
+  rules:
+  - host: oauth2.YOUR_DOMAIN
+    http:
+      paths:
+      - backend:
+          serviceName: oauth2-proxy
+          servicePort: 4180
+        path: /oauth2
+  tls:
+  - hosts:
+    - oauth2.YOUR_DOMAIN
+    secretName: oauth2-tls
