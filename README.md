@@ -2,6 +2,8 @@
 
 https://speakerdeck.com/masayaaoyama/cndt2020-k8s-amsy810
 
+
+
 # 事前準備
 
 ## リポジトリのフォーク
