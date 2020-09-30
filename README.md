@@ -2,7 +2,7 @@
 
 https://speakerdeck.com/masayaaoyama/cndt2020-k8s-amsy810
 
-
+![overview](./overview.png)
 
 # 事前準備
 
